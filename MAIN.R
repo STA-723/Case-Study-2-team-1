@@ -17,7 +17,7 @@ df$reviews_per_month[is.na(df$reviews_per_month)] = 0
 df$number_of_reviews[is.na(df$number_of_reviews)] = 0
 
 # handle extreme values
-df = df[df$price>0&df$price<9999,]
+df = df[df$price>=9&df$price<9999,]
 
 # create name length var
 split_names = strsplit(df$name," ")
