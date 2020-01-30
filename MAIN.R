@@ -2,12 +2,9 @@ library(readr)
 library(mice)
 library(tidyverse)
 library(MASS)
-<<<<<<< HEAD
 library(tidytext)
-=======
 library(R2jags)
 
->>>>>>> 9925b6c77f75acb93508bbfc79585b00d46e9823
 
 ## Handle Data 
 
