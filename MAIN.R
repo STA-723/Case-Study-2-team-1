@@ -2,6 +2,8 @@ library(readr)
 library(mice)
 library(tidyverse)
 library(MASS)
+library(R2jags)
+
 
 ## Handle Data 
 
@@ -37,8 +39,17 @@ df = df[df$minimum_nights<=14,]
 # only dropping around 5000 obs
 
 # popularity metric
-df$number_of_months = df$number_of_reviews*(df$reviews_per_month)^(-1)
-imp = mice(df)
+df$number_of_months = ifelse(df$reviews_per_month==0,NA,
+                             df$number_of_reviews*(df$reviews_per_month)^(-1))
+
+# break up last review into year and month
+df$last_review_yr = as.numeric(substr(df$last_review,1,4))
+df$last_review_mth = as.numeric(substr(df$last_review,6,7))
+# drop last review column
+df = subset(df,select=-c(last_review))
+
+# impute last review date and number of months
+imp = mice(df,m=2)
 df = mice::complete(imp)
 
 
@@ -104,6 +115,31 @@ View(des_mat)
 
 
 # JAGS- NEG BINOMIAL
+
+nbmodel = function(){
+  ## Likelihood
+  for(i in 1:N){
+    y[i] ~ dnegbin(p[i],r)
+    p[i] <- r/(r+lambda[i]) 
+    log(lambda[i]) <- mu[i]
+    mu[i] <- inprod(beta[],X[i,])
+  } 
+  ## Priors
+  beta ~ dmnorm(mu.beta,tau.beta)
+  r ~ dunif(0,50)
+}
+
+forJags = list(X=cbind(1,df$minimum_nights),
+                y=c(df$reviews_per_month),
+                N=nrow(df),
+                mu.beta=rep(0,2),
+                tau.beta=diag(.0001,2))
+
+
+ZSout = jags(forJags,model=nbmodel, inits=NULL,    
+             parameters.to.save=c("r", "beta"), 
+             n.iter=10000)
+
 
 
 # MAP
