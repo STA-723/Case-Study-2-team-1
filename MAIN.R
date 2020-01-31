@@ -2,6 +2,7 @@ library(readr)
 library(mice)
 library(tidyverse)
 library(MASS)
+library(tidytext)
 library(R2jags)
 
 
@@ -24,7 +25,6 @@ df = df[df$price>=9&df$price<9999,]
 # create name length var
 split_names = strsplit(df$name," ")
 df$name_length = lengths(split_names)
-
 
 # availability 365-
 # indicator 0,1 and raw number
@@ -63,7 +63,7 @@ ggplot(df,aes(x=room_type,y=log(price))) +
 
 ggplot(df,aes(x=room_type,y=log(price),col=neighbourhood_group)) +
   geom_boxplot() +
-  ggtitle("Price by Burrows") + ylab("Price (log)") + xlab("Room Type")
+  ggtitle("Price by Borough") + ylab("Price (log)") + xlab("Room Type")
 
 rooms = unique(df$room_type)
 ggplot(df[df$room_type==rooms[3],],aes(x=neighbourhood,y=log(price))) +
@@ -72,8 +72,8 @@ ggplot(df[df$room_type==rooms[3],],aes(x=neighbourhood,y=log(price))) +
 
 ggplot(df,aes(x=neighbourhood_group,fill=room_type)) +
   geom_bar(position="fill") +
-  ggtitle("Rooms by Burrow") + 
-  xlab("Burrow") + ylab("Frequency")
+  ggtitle("Rooms by Borough") + 
+  xlab("Borough") + ylab("Frequency")
 
 
 ## Modeling 
@@ -191,11 +191,76 @@ summary(model_pop)
 # MAP
 
 
+# TEXT ANALYSIS
+
+#Evan's note:  I'm confused about our name length, so here's another option
+#This gives characters in the name, rather than words.  I'm just putting this 
+#in front of the rest of the analysis.  
+split2=strsplit(df$name,"")
+df$name_char=lengths(split2)
+
+#I need the transaction ID in the data, or so I think, so I'll replicate all
+#the data cleaning except for that here
+df2 <- read_csv("AB_NYC_2019.csv")
+
+# handle missing data
+df2 = subset(df2,select=-c(host_name,host_id))
+df2 = df2[!is.na(df2$name),]
+# set reviews == 0
+df2$reviews_per_month[is.na(df2$reviews_per_month)] = 0
+df2$number_of_reviews[is.na(df2$number_of_reviews)] = 0
+
+# handle extreme values
+df2 = df2[df2$price>=9&df2$price<9999,]
+
+# create name length var
+split_names = strsplit(df2$name," ")
+df2$name_length = lengths(split_names)
+
+# availability 365-
+# indicator 0,1 and raw number
+#df2$availability_indicator = ifelse(df2$availability_365==0,0,1)
+# drop if available 0 days per year
+df2 = df2[df2$availability_365!=0,]
+
+## CLEAN DATA HERE
+# decide to only look at normal stays
+# drop min stays greater than 2 weeks
+df2 = df2[df2$minimum_nights<=14,]
 
 
 
 
+#Back to LDA/sentiment analysis/whatever
+df2$backupname = df2$name
+dftoken = df2 %>% unnest_tokens(word,name)
+dftoken %>% count(word, sort=TRUE)
+#Lots of room/bedroom/apt, plus borough
 
+data(stop_words)
 
+dftoken = dftoken %>% anti_join(stop_words,by="word")
+dftoken %>% count(word, sort=TRUE)
+#With common words removed, more of the same, less "to"
 
+#Note:  I tried to vectorize this logical for an hour, gave up and did this.  Feel free to alter.
+dftoken = dftoken %>% filter(word != "apt" & word != "apartment" & word != "manhattan" & word != "brooklyn" & word != "room" & word != "bedroom" & word != "nyc")
+dftoken %>% count(word, sort=TRUE)
+
+#adapting copied code from tidytextmining, Silge & Robinson
+word_by_price <- dftoken %>% 
+  group_by(word) %>% 
+  summarise(price = median(price), uses = n()) %>%
+  ungroup()
+
+options(tibble.print_max=100)
+
+word_by_price = word_by_price %>% 
+  filter(uses >= 5) %>%
+  arrange(desc(price))
+
+print(word_by_price, n=25)
+
+dftoken %>% 
+  filter(word == "fee")
 
