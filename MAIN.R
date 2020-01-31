@@ -49,8 +49,9 @@ df$last_review_mth = as.numeric(substr(df$last_review,6,7))
 df = subset(df,select=-c(last_review))
 
 # impute last review date and number of months
-imp = mice(df,m=2)
-df = mice::complete(imp)
+# imp = mice(df,m=2)
+# df = mice::complete(imp)
+df = df[df$reviews_per_month!=0, ]
 
 
 ## EDA
@@ -97,18 +98,32 @@ summary(model_price)
 # everything important except calculated host listing count
 
 # R Neg Bin
-model_pop = glm(reviews_per_month ~ neighbourhood_group + price + 
+model_pop = glm.nb(reviews_per_month ~ neighbourhood_group + price + 
                room_type + calculated_host_listings_count + minimum_nights +
-               name_length + availability_indicator | number_of_months, data = df, family = binomial(link='log'))
+               name_length , data = df)
 summary(model_pop)
 # important for determing popularity: almost everything in model
 
 
 # OBTAIN DESIGN MATRIX/ DATA MATRICES
-des_mat = model.matrix(lm(reviews_per_month ~ neighbourhood_group + price + 
-                            room_type + calculated_host_listings_count + minimum_nights +
-                            name_length + availability_indicator-1, data = df))
+des_mat = model.matrix(lm(reviews_per_month ~ price + room_type + 
+                            calculated_host_listings_count + minimum_nights +
+                            name_length + availability_365 + last_review_yr, data = df))
 View(des_mat)
+
+neighb_burrow_mat = unique(as.matrix(subset(df,select=c(neighbourhood,neighbourhood_group))))
+neighbs = neighb_burrow_mat[,1]
+X_neighbs = sapply(neighbs,function(x) ifelse(df$neighbourhood==x,1,0))
+View(X_neighbs)
+
+burrs = unique(neighb_burrow_mat[,2])
+X_burrs = sapply(burrs,function(x) ifelse(df$neighbourhood_group==x,1,0))
+View(X_burrs)
+
+burrow_loc = rep(NA,length(neighbs))
+for (i in 1:length(burrs)){
+  burrow_loc[neighb_burrow_mat[,2]==burrs[i]] = i
+}
 
 
 # JAGS- LOG(PRICE)
@@ -116,31 +131,62 @@ View(des_mat)
 
 # JAGS- NEG BINOMIAL
 
+## subset df for ease
+df = df[sample(1:nrow(df),500),]
+
 nbmodel = function(){
+  
   ## Likelihood
   for(i in 1:N){
     y[i] ~ dnegbin(p[i],r)
     p[i] <- r/(r+lambda[i]) 
-    log(lambda[i]) <- mu[i]
-    mu[i] <- inprod(beta[],X[i,])
+    log(lambda[i]) <- mu[i]+exposure[i]
+    mu[i] <- inprod(beta[],X[i,]) + inprod(beta_n[],X_n[i,])
   } 
+  
+  ## Hierarchy
+  for (i in 1:p_n){
+    mu.n[i] = beta_b[burrow_loc[i]]
+  }
+  beta_n ~ dmnorm(mu.n,tau.n)
+  # burrows
+  beta_b ~ dmnorm(mu.b,tau.b)
+  
   ## Priors
   beta ~ dmnorm(mu.beta,tau.beta)
   r ~ dunif(0,50)
 }
 
-forJags = list(X=cbind(1,df$minimum_nights),
-                y=c(df$reviews_per_month),
-                N=nrow(df),
-                mu.beta=rep(0,2),
-                tau.beta=diag(.0001,2))
+p = ncol(des_mat)
+p_neighbs = ncol(X_neighbs)
+p_burr = ncol(X_burrs)
+
+forJags = list(X=des_mat,
+               X_n = X_neighbs,
+               y=c(df$number_of_reviews),
+               exposure=log(df$reviews_per_month),
+               N=nrow(df),
+               mu.beta=rep(0,p),
+               tau.beta=diag(.0001,p),
+               mu.b = rep(0,p_burr),
+               tau.b = diag(1,p_burr),
+               tau.n = diag(1,p_neighbs),
+               p_n = p_neighbs,
+               burrow_loc = burrow_loc)
 
 
 ZSout = jags(forJags,model=nbmodel, inits=NULL,    
-             parameters.to.save=c("r", "beta"), 
+             parameters.to.save=c("beta"), 
              n.iter=10000)
 
 
+model_pop = glm.nb(number_of_reviews ~ price + room_type + 
+                     calculated_host_listings_count + minimum_nights +
+                     name_length + availability_365 + last_review_yr + 
+                     offset(log(reviews_per_month)),
+                data = df)
+
+summary(model_pop)
 
 # MAP
 
