@@ -5,6 +5,8 @@ library(MASS)
 library(tidytext)
 library(R2jags)
 
+library(LatticeKrig)
+
 
 ## Handle Data 
 
@@ -52,6 +54,88 @@ df = subset(df,select=-c(last_review))
 # imp = mice(df,m=2)
 # df = mice::complete(imp)
 df = df[df$reviews_per_month!=0, ]
+
+##############
+#Spatial Stuff
+##############
+
+#set up knots for spatial component
+summary(df$longitude)
+summary(df$latitude)
+
+quilt.plot(df$longitude,df$latitude,log(df$price))
+
+
+lon = seq(-74.34,-73.61,.025)
+lat = seq(40.4,41.01,.025)
+
+knots = cbind(rep(lon,each=length(lat)),rep(lat,length(lon)))
+dim(knots)
+
+d = function(x1,y1,x2,y2){
+  sqrt((x1-x2)^2 + (y1-y2)^2)
+}
+
+dist = matrix(NA,dim(df)[1],dim(knots)[1])
+for(i in 1:dim(df)[1]){
+  dist[i,] <- d(df$longitude[i],df$latitude[i],knots[,1],knots[,2]) 
+}
+
+mindist = apply(dist,2,min)
+drop = which(mindist > .03)
+plot(knots[-drop,])
+dim(knots[-drop,])
+
+dist2 = dist[,-drop]
+
+plon = seq(-74.34,-73.61,.00625)
+plat = seq(40.4,41.01,.00625)
+ploc = cbind(rep(plon,each=length(plat)),rep(plat,length(plon)))
+
+pd_dist = matrix(NA,dim(df)[1],dim(ploc)[1])
+for(i in 1:dim(df)[1]){
+  pd_dist[i,] <- d(df$longitude[i],df$latitude[i],ploc[,1],ploc[,2]) 
+}
+
+pmindist = apply(pd_dist,2,min)
+pdrop = which(pmindist > .01)
+points(ploc[-pdrop,],pch='.')
+dim(ploc[-pdrop,])
+
+pd_dist2 = pd_dist[,-pdrop]
+dim(pd_dist2)
+
+knots2 = knots[-drop,]
+ploc2 = ploc[-pdrop,]
+
+pk_dist = matrix(NA,dim(ploc2)[1],dim(knots2)[1])
+for(i in 1:dim(ploc2)[1]){
+  pk_dist[i,] <- d(ploc2[i,1],ploc2[i,2],knots2[,1],knots2[,2]) 
+}
+
+dim(pk_dist)
+
+p = 1.5
+K = data.frame(dnorm(dist2,0,.025*p))
+test = lm(log(df$price)~.,data=K)
+
+pK = data.frame(dnorm(pk_dist,0,.025*p))
+ptest = predict.lm(test,newdata = pK)
+
+
+quilt.plot(ploc2[,1],ploc2[,2],ptest)
+points(knots2)
+
+
+
+par(mfrow = c(1,3))
+quilt.plot(df$longitude,df$latitude,log(df$price),zlim = c(3,max(log(df$price))))
+quilt.plot(df$longitude,df$latitude,test$fitted.values,zlim = c(3,max(log(df$price))))
+points(knots2)
+quilt.plot(xlim= range(df$longitude),ylim=range(df$latitude),ploc2[,1],ploc2[,2],ptest,zlim = c(3,max(log(df$price))))
+points(knots2)
+
+
 
 
 ## EDA
