@@ -106,6 +106,7 @@ pd_dist2 = pd_dist[,-pdrop]
 dim(pd_dist2)
 
 knots2 = knots[-drop,]
+nknots = dim(knots2)[1]
 ploc2 = ploc[-pdrop,]
 
 pk_dist = matrix(NA,dim(ploc2)[1],dim(knots2)[1])
@@ -115,27 +116,34 @@ for(i in 1:dim(ploc2)[1]){
 
 dim(pk_dist)
 
-p = 1.5
-K = data.frame(dnorm(dist2,0,.025*p))
-test = lm(log(df$price)~.,data=K)
+pr = 1
+K = data.frame(dnorm(dist2,0,.025*pr))
+pK = data.frame(dnorm(pk_dist,0,.025*pr))
 
-pK = data.frame(dnorm(pk_dist,0,.025*p))
+#fit with lm
+test = lm(log(df$price)~.,data=K)
+#predict at locations through domain
 ptest = predict.lm(test,newdata = pK)
 
-
+#can see impact of edge effects, probably not a huge concern, but means we need to be careful
+#not actually sure if predictive locations are valuable given how dense the observations are and how
+#we don't have coordinates/shapefiles for the neighborhoods
 quilt.plot(ploc2[,1],ploc2[,2],ptest)
 points(knots2)
 
 
 
-par(mfrow = c(1,3))
+par(mfrow = c(1,3)) #just use first two plots in slide for presentation
 quilt.plot(df$longitude,df$latitude,log(df$price),zlim = c(3,max(log(df$price))))
 quilt.plot(df$longitude,df$latitude,test$fitted.values,zlim = c(3,max(log(df$price))))
 points(knots2)
 quilt.plot(xlim= range(df$longitude),ylim=range(df$latitude),ploc2[,1],ploc2[,2],ptest,zlim = c(3,max(log(df$price))))
 points(knots2)
 
+#will calculate best location through sum of burrough effect, neighborhood effect, and spatial effect
 
+par(mfrow= c(1,1))
+#############################
 
 
 ## EDA
@@ -198,16 +206,18 @@ View(des_mat)
 neighb_burrow_mat = unique(as.matrix(subset(df,select=c(neighbourhood,neighbourhood_group))))
 neighbs = neighb_burrow_mat[,1]
 X_neighbs = sapply(neighbs,function(x) ifelse(df$neighbourhood==x,1,0))
-View(X_neighbs)
+#View(X_neighbs)
 
 burrs = unique(neighb_burrow_mat[,2])
 X_burrs = sapply(burrs,function(x) ifelse(df$neighbourhood_group==x,1,0))
-View(X_burrs)
+#View(X_burrs)
 
 burrow_loc = rep(NA,length(neighbs))
 for (i in 1:length(burrs)){
   burrow_loc[neighb_burrow_mat[,2]==burrs[i]] = i
 }
+
+N = dim(df)[1]
 
 
 # JAGS- LOG(PRICE)
@@ -225,7 +235,7 @@ nbmodel = function(){
     y[i] ~ dnegbin(p[i],r)
     p[i] <- r/(r+lambda[i]) 
     log(lambda[i]) <- mu[i]+exposure[i]
-    mu[i] <- inprod(beta[],X[i,]) + inprod(beta_n[],X_n[i,])
+    mu[i] <- inprod(beta[],X[i,]) + inprod(beta_n[],X_n[i,]) #+ inprod(sp[],K[i,])
   } 
   
   ## Hierarchy
@@ -238,12 +248,14 @@ nbmodel = function(){
   
   ## Priors
   beta ~ dmnorm(mu.beta,tau.beta)
+  #sp ~ dmnorm(0,tau.sp)
   r ~ dunif(0,50)
 }
 
 p = ncol(des_mat)
 p_neighbs = ncol(X_neighbs)
 p_burr = ncol(X_burrs)
+#nknots = ncol(K)
 
 forJags = list(X=des_mat,
                X_n = X_neighbs,
@@ -256,7 +268,11 @@ forJags = list(X=des_mat,
                tau.b = diag(1,p_burr),
                tau.n = diag(1,p_neighbs),
                p_n = p_neighbs,
-               burrow_loc = burrow_loc)
+               burrow_loc = burrow_loc
+#               ,K = as.matrix(K),
+#               tau.sp = diag(.0001,nknots)
+               )
+               
 
 
 ZSout = jags(forJags,model=nbmodel, inits=NULL,    
