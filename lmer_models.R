@@ -22,7 +22,7 @@ summary(mod_price)
 
 
 library(lmerTest)
-ranova(mod_price)
+rantest = ranova(mod_price)
 
 ran_est = ranef(mod_price)
 
@@ -119,6 +119,15 @@ print(xtable(as.data.frame(as.matrix(nb_eff_ord)[1:10,])))
 print(xtable(as.data.frame(as.matrix(nb_eff_ord2)[217:208,])))
 #Least Popular
 print(xtable(as.data.frame(as.matrix(nb_eff_ord2)[1:10,])))
+
+#Borough Price
+print(xtable(b))
+
+#Borough Popularity
+print(xtable(b2))
+
+#test on random effects
+print(xtable(as.data.frame(rantest)))
 
 cor(nb_eff,nb_eff2)
 plot(nb_eff,nb_eff2,xlab='price',ylab='pop')
