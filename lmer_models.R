@@ -3,7 +3,8 @@
 #take df as specified in main script
 
 df$lprice = log(df$price)
-df$last_review  = df$last_review_yr - 2011
+df$last_review  = 2019 - df$last_review_yr
+df$months_available = df$availability_365*12/365
 
 library(lme4)
 ###################
@@ -11,13 +12,14 @@ library(lme4)
 ###################
 mod_price = lmer(lprice ~  reviews_per_month + 
                    room_type + calculated_host_listings_count + minimum_nights + name_length + 
-                   availability_365 + last_review +(1|neighbourhood_group/neighbourhood), data = df)
+                   months_available + last_review +(1|neighbourhood_group/neighbourhood), data = df)
 
 relgrad <- with(mod_price@optinfo$derivs,solve(Hessian,gradient))
 max(abs(relgrad))
 #suggests we're good despite warning
 
 summary(mod_price)
+
 
 library(lmerTest)
 ranova(mod_price)
@@ -50,13 +52,13 @@ nb_eff_ord
 #find overdispersion parameter by fitting model without random effect
 overtest = glm.nb(number_of_reviews ~  price + 
                     room_type + calculated_host_listings_count + minimum_nights + name_length + 
-                    availability_365 + last_review + offset(log(number_of_months)), data = df)
+                    months_available + last_review + offset(log(number_of_months)), data = df)
 overtest$family
 #overdispersion estimated as 1.733
 
 mod_pop = glmer(number_of_reviews ~  price + 
                   room_type + calculated_host_listings_count + minimum_nights + name_length + 
-                  availability_365 + last_review + offset(log(number_of_months))+
+                  months_available + last_review + offset(log(number_of_months))+
                   (1|neighbourhood_group/neighbourhood), data = df,family=MASS::negative.binomial(theta=1.733))
 
 deviance(mod_pop)/df.residual(mod_pop) 
@@ -89,6 +91,25 @@ rownames(nb_eff_ord2) = nb_names2[nb_ord2]
 nb_eff_ord2
 
 library(xtable)
+
+#Price Fixed Effects
+coef(summary(mod_price))[,-3]
+print(xtable(coef(summary(mod_price))[,-3],digits=3))
+
+#Price Random Variance
+as.data.frame(VarCorr(mod_price))[,c(1,4,5)]
+print(xtable(as.data.frame(VarCorr(mod_price))[,c(1,4,5)],digits=3))
+
+
+#Popularity Fixed Effects
+coef(summary(mod_pop))[,-3]
+print(xtable(coef(summary(mod_pop))[,-3],digits=3))
+
+#Popularity Random Variance
+as.data.frame(VarCorr(mod_pop))[,c(1,4,5)]
+print(xtable(as.data.frame(VarCorr(mod_pop))[,c(1,4,5)],digits=3))
+
+
 #Most Expensive
 print(xtable(as.data.frame(as.matrix(nb_eff_ord)[217:208,])))
 #Least Expensive
