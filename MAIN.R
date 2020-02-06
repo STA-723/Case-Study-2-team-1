@@ -192,15 +192,10 @@ df$room_type = as.factor(df$room_type)
 # R lm on log(price)
 model_price = lm(price ~ neighbourhood_group + reviews_per_month + 
                    room_type + calculated_host_listings_count + minimum_nights +
-                   name_length + availability_indicator, data = df)
+                   name_length, data = df)
 summary(model_price)
 # everything important except calculated host listing count
 
-# R Neg Bin
-model_pop = glm.nb(reviews_per_month ~ neighbourhood_group + price + 
-               room_type + calculated_host_listings_count + minimum_nights +
-               name_length , data = df)
-summary(model_pop)
 # important for determing popularity: almost everything in model
 
 
@@ -210,6 +205,7 @@ des_mat = model.matrix(lm(reviews_per_month ~ price + room_type +
                             name_length + availability_365 + last_review_yr, data = df))
 View(des_mat)
 
+# data stuff needed for hierarchy
 neighb_burrow_mat = unique(as.matrix(subset(df,select=c(neighbourhood,neighbourhood_group))))
 neighbs = neighb_burrow_mat[,1]
 X_neighbs = sapply(neighbs,function(x) ifelse(df$neighbourhood==x,1,0))
@@ -232,59 +228,84 @@ N = dim(df)[1]
 
 # JAGS- NEG BINOMIAL
 
-## subset df for ease
-df = df[sample(1:nrow(df),500),]
+
+
 
 nbmodel = function(){
   
   ## Likelihood
   for(i in 1:N){
-    y[i] ~ dnegbin(p[i],r)
-    p[i] <- r/(r+lambda[i]) 
-    log(lambda[i]) <- mu[i]+exposure[i]
-    mu[i] <- inprod(beta[],X[i,]) + inprod(beta_n[],X_n[i,]) #+ inprod(sp[],K[i,])
+    y[i] ~ dpois(lambda[i]*gamma[i]*exposure[i])
+    gamma[i] ~ dgamma(1/phi,1/phi) 
+    log(lambda[i]) <- mu[i]
+    mu[i] <- inprod(beta[],X[i,]) + inprod(beta_n[],X_n[i,])
   } 
+  phi ~ dgamma(2,1)
   
   ## Hierarchy
   for (i in 1:p_n){
-    mu.n[i] = beta_b[burrow_loc[i]]
+    beta_n[i] ~ dnorm(beta_b[burrow_loc[i]],tau.n[i])
+    tau.n[i] ~ dgamma(2,1)
   }
-  beta_n ~ dmnorm(mu.n,tau.n)
+  
   # burrows
-  beta_b ~ dmnorm(mu.b,tau.b)
+  for (i in 1:p_b){
+    beta_b[i] ~ dnorm(mu.b,tau.b[i])
+    tau.b[i] ~ dgamma(2,1)
+  }
   
   ## Priors
-  beta ~ dmnorm(mu.beta,tau.beta)
-  #sp ~ dmnorm(0,tau.sp)
-  r ~ dunif(0,50)
+  for ( i in 1:p){
+    beta[i] ~ dnorm(mu.beta,tau.beta[i])
+    tau.beta[i] ~ dgamma(2,1)
+  }
+  
 }
+
 
 p = ncol(des_mat)
 p_neighbs = ncol(X_neighbs)
 p_burr = ncol(X_burrs)
-#nknots = ncol(K)
 
+#nknots = ncol(K)
 forJags = list(X=des_mat,
                X_n = X_neighbs,
                y=c(df$number_of_reviews),
-               exposure=log(df$reviews_per_month),
+               exposure=df$number_of_months,
                N=nrow(df),
-               mu.beta=rep(0,p),
-               tau.beta=diag(.0001,p),
-               mu.b = rep(0,p_burr),
-               tau.b = diag(1,p_burr),
-               tau.n = diag(1,p_neighbs),
+               mu.beta=0,
+               mu.b = 0,
                p_n = p_neighbs,
-               burrow_loc = burrow_loc
-#               ,K = as.matrix(K),
-#               tau.sp = diag(.0001,nknots)
-               )
-               
+               p = p,
+               p_b = p_burr,
+               burrow_loc = burrow_loc)
 
 
-ZSout = jags(forJags,model=nbmodel, inits=NULL,    
-             parameters.to.save=c("beta"), 
-             n.iter=10000)
+
+ZSout2 = jags(forJags,model=nbmodel, inits=NULL,    
+             parameters.to.save=c("beta","beta_b","beta_n"), 
+             n.iter=8000)
+
+
+beta_burr = ZSout$BUGSoutput$sims.list$beta_b
+beta_neighb = ZSout$BUGSoutput$sims.list$beta_n
+
+boxplot(beta_burr, horizontal=T,
+        main = "Coefficient on Burrows")
+axis(side=2,labels=burrs)
+
+boxplot(beta_neighb[,burrow_loc==1], horizontal=T,
+        main = paste0("Coef on Neighborhoods, ",burrs[1]))
+axis(side=2,labels=F)
+boxplot(beta_neighb[,burrow_loc==2], horizontal=T,
+        main = paste0("Coef on Neighborhoods, ",burrs[2]))
+boxplot(beta_neighb[,burrow_loc==3], horizontal=T,
+        main = paste0("Coef on Neighborhoods, ",burrs[3]))
+boxplot(beta_neighb[,burrow_loc==4], horizontal=T,
+        main = paste0("Coef on Neighborhoods, ",burrs[4]))
+boxplot(beta_neighb[,burrow_loc==5], horizontal=T,
+        main = paste0("Coef on Neighborhoods, ",burrs[5]))
+
 
 
 model_pop = glm.nb(number_of_reviews ~ price + room_type + 
@@ -296,6 +317,11 @@ model_pop = glm.nb(number_of_reviews ~ price + room_type +
 summary(model_pop)
 
 # MAP
+
+
+
+
+
 
 
 # TEXT ANALYSIS
