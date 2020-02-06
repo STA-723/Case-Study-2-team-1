@@ -61,3 +61,5 @@ priceout2 = jags(data=jagsdata,model=pricemodel, inits=NULL,
 save(priceout2, file="price_jags_output2.Rdata")
 priceout2
 
+chains = as.matrix(as.mcmc(priceout2))
+plot(chains[,],type='l')
