@@ -142,6 +142,13 @@ points(knots2)
 
 #will calculate best location through sum of burrough effect, neighborhood effect, and spatial effect
 
+png('spatial_example.png',width=900,height=600)
+par(mfrow = c(1,2))
+quilt.plot(df$longitude,df$latitude,log(df$price),zlim = c(3,max(log(df$price))),main='Data')
+quilt.plot(df$longitude,df$latitude,test$fitted.values,zlim = c(3,max(log(df$price))),main='Spatial Predictions')
+points(knots2,pch=20)
+dev.off()
+
 par(mfrow= c(1,1))
 #############################
 
